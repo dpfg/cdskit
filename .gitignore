@@ -1,3 +1,5 @@
 .idea/
+.vscode/
+export*.json
 cleanaroo.exe
 cleanaroo
