@@ -1,4 +1,4 @@
-module github.com/dpfg/cleanaroo
+module github.com/dpfg/cdskit
 
 go 1.13
 
