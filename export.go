@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -16,7 +18,7 @@ type ExportKindCmd struct {
 	ProjectID string `short:"p" long:"project" description:"Project to be used." required:"true"`
 	Namespace string `short:"n" long:"namespace" description:"Namespace to get data from"`
 	Kind      string `short:"k" long:"kind" description:"Kind to export" required:"true"`
-	Format    string `long:"format" default:"csv" description:"One of the follwing formats: csv, json"`
+	Format    string `long:"format" default:"json" description:"One of the follwing formats: csv, json"`
 }
 
 // Execute is called by go-flags
@@ -42,10 +44,12 @@ func (cmd *ExportKindCmd) Execute(args []string) error {
 		return err
 	}
 
+	w := cmd.newExportWriter(f)
+
 	read := -1
 	offset := 0
 
-	f.WriteString("[")
+	w.start()
 	for read != 0 {
 
 		q := datastore.NewQuery(cmd.Kind).Namespace(cmd.Namespace).Offset(offset).Limit(1000)
@@ -64,63 +68,27 @@ func (cmd *ExportKindCmd) Execute(args []string) error {
 
 		fmt.Fprintf(os.Stderr, "Exporintg %s - %d\n", cmd.Kind, offset+read)
 
-		for i, v := range batch {
-			b, err := v.ToJSON()
-
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Unable to marshal entry: %s", err.Error())
-				continue
-			}
-
-			first := offset == 0 && i == 0
-			if !first {
-				f.WriteString(",\n")
-			}
-
-			_, err = f.Write(b)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Unable to write entry: %s", err.Error())
-				continue
-			}
+		for _, v := range batch {
+			w.record(v)
 		}
 
 		offset = offset + len(batch)
 	}
-	f.WriteString("]")
-
-	// w := csv.NewWriter(f)
-
-	// first := true
-	// for _, v := range r {
-	// 	if first {
-	// 		w.Write(v.ToCSVHeader())
-	// 		first = false
-	// 	}
-	// 	w.Write(v.ToCSVRecord())
-	// }
-	// w.Flush()
+	w.end()
 
 	return nil
 }
 
-// func (cmd ExportKindCmd) export() error {
-// 	switch cmd.Format {
-// 	case "csv":
-// 		return cmd.exportCSV()
-// 	case "json":
-// 		return cmd.exportJSON()
-// 	default:
-// 		return fmt.Errorf("Unsupported export format: %s", cmd.Format)
-// 	}
-// }
-
-// func (cmd ExportKindCmd) exportCSV() error {
-
-// }
-
-// func (cmd ExportKindCmd) exportJSON() error {
-
-// }
+func (cmd ExportKindCmd) newExportWriter(w io.Writer) exportWriter {
+	switch cmd.Format {
+	case "csv":
+		return &csvExportWriter{csvw: csv.NewWriter(w)}
+	case "json":
+		return &jsonExportWriter{writer: w, first: true}
+	default:
+		panic("Unsupported format: " + cmd.Format)
+	}
+}
 
 func (cmd *ExportKindCmd) newExportFolder() string {
 	return "exports/"
@@ -149,7 +117,7 @@ func (de *dynamicEntity) Load(ps []datastore.Property) error {
 	return nil
 }
 
-// Save saves all of l's properties as a slice of Properties.
+// Save is never used just completes interface
 func (de *dynamicEntity) Save() ([]datastore.Property, error) {
 	return nil, nil
 }
@@ -230,5 +198,67 @@ func toExportValue(value interface{}) interface{} {
 	default:
 		return value
 	}
+
+}
+
+type exportWriter interface {
+	start()
+	record(de *dynamicEntity)
+	end()
+}
+
+type jsonExportWriter struct {
+	writer io.Writer
+	first  bool
+}
+
+func (format jsonExportWriter) start() {
+	format.writer.Write([]byte("["))
+}
+
+func (format *jsonExportWriter) record(de *dynamicEntity) {
+	v, err := de.ToJSON()
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to marshal entry: %s", err.Error())
+		return
+	}
+
+	_, err = format.writer.Write(v)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to write entry: %s", err.Error())
+		return
+	}
+
+	if !format.first {
+		format.writer.Write([]byte(",\n"))
+	} else {
+		format.first = false
+	}
+}
+
+func (format jsonExportWriter) end() {
+	format.writer.Write([]byte("]"))
+}
+
+type csvExportWriter struct {
+	csvw   *csv.Writer
+	headed bool
+}
+
+func (format csvExportWriter) start() {
+
+}
+
+func (format *csvExportWriter) record(de *dynamicEntity) {
+	if !format.headed {
+		format.csvw.Write(de.ToCSVHeader())
+		format.headed = true
+	}
+	format.csvw.Write(de.ToCSVRecord())
+}
+
+func (format csvExportWriter) end() {
 
 }
