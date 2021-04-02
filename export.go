@@ -49,7 +49,7 @@ func (cmd *ExportKindCmd) Execute(args []string) error {
 	read := -1
 	offset := 0
 
-	w.start()
+	w.WriteHeader()
 	for read != 0 {
 
 		q := datastore.NewQuery(cmd.Kind).Namespace(cmd.Namespace).Offset(offset).Limit(1000)
@@ -68,13 +68,22 @@ func (cmd *ExportKindCmd) Execute(args []string) error {
 
 		fmt.Fprintf(os.Stderr, "Exporintg %s - %d\n", cmd.Kind, offset+read)
 
-		for _, v := range batch {
-			w.record(v)
+		if offset != 0 {
+			// second group, write up line break
+			w.WriteLineBreak()
+		}
+
+		for i, v := range batch {
+			w.WriterRecord(v)
+
+			if i != len(batch) {
+				w.WriteLineBreak()
+			}
 		}
 
 		offset = offset + len(batch)
 	}
-	w.end()
+	w.WriteFooter()
 
 	return nil
 }
@@ -84,7 +93,7 @@ func (cmd ExportKindCmd) newExportWriter(w io.Writer) exportWriter {
 	case "csv":
 		return &csvExportWriter{csvw: csv.NewWriter(w)}
 	case "json":
-		return &jsonExportWriter{writer: w, first: true}
+		return &jsonExportWriter{writer: w}
 	default:
 		panic("Unsupported format: " + cmd.Format)
 	}
@@ -202,21 +211,21 @@ func toExportValue(value interface{}) interface{} {
 }
 
 type exportWriter interface {
-	start()
-	record(de *dynamicEntity)
-	end()
+	WriteHeader()
+	WriteLineBreak()
+	WriterRecord(de *dynamicEntity)
+	WriteFooter()
 }
 
 type jsonExportWriter struct {
 	writer io.Writer
-	first  bool
 }
 
-func (format jsonExportWriter) start() {
+func (format jsonExportWriter) WriteHeader() {
 	format.writer.Write([]byte("["))
 }
 
-func (format *jsonExportWriter) record(de *dynamicEntity) {
+func (format *jsonExportWriter) WriterRecord(de *dynamicEntity) {
 	v, err := de.ToJSON()
 
 	if err != nil {
@@ -231,14 +240,13 @@ func (format *jsonExportWriter) record(de *dynamicEntity) {
 		return
 	}
 
-	if !format.first {
-		format.writer.Write([]byte(",\n"))
-	} else {
-		format.first = false
-	}
 }
 
-func (format jsonExportWriter) end() {
+func (format *jsonExportWriter) WriteLineBreak() {
+	format.writer.Write([]byte(",\n"))
+}
+
+func (format jsonExportWriter) WriteFooter() {
 	format.writer.Write([]byte("]"))
 }
 
@@ -247,11 +255,11 @@ type csvExportWriter struct {
 	headed bool
 }
 
-func (format csvExportWriter) start() {
+func (format csvExportWriter) WriteHeader() {
 
 }
 
-func (format *csvExportWriter) record(de *dynamicEntity) {
+func (format *csvExportWriter) WriterRecord(de *dynamicEntity) {
 	if !format.headed {
 		format.csvw.Write(de.ToCSVHeader())
 		format.headed = true
@@ -259,6 +267,10 @@ func (format *csvExportWriter) record(de *dynamicEntity) {
 	format.csvw.Write(de.ToCSVRecord())
 }
 
-func (format csvExportWriter) end() {
+func (format *csvExportWriter) WriteLineBreak() {
+
+}
+
+func (format csvExportWriter) WriteFooter() {
 
 }
