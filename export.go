@@ -76,7 +76,7 @@ func (cmd *ExportKindCmd) Execute(args []string) error {
 		for i, v := range batch {
 			w.WriterRecord(v)
 
-			if i != len(batch) {
+			if i != len(batch)-1 {
 				w.WriteLineBreak()
 			}
 		}
