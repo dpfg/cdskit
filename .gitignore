@@ -1,5 +1,6 @@
 .idea/
 .vscode/
+dist
 exports/*
 export*.json
 cdskit.exe
