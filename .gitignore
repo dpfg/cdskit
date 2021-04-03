@@ -1,3 +1,6 @@
 .idea/
-cleanaroo.exe
-cleanaroo
+.vscode/
+exports/*
+export*.json
+cdskit.exe
+cdskit
